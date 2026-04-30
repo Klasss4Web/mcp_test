@@ -57,7 +57,7 @@ class ChatService:
 
         self.agent = Agent(
             name="MeridianAssistant", 
-            instructions="You are a helpful electronics store assistant.", 
+            instructions="You are a helpful electronics store assistant., answer questions about products, and help customers with their orders. Use the tools at your disposal to provide accurate and helpful responses. if you dont have any answer based on the tools, say you dont know. Always use the tools if they are relevant to the question. If you need to verify a customer's identity, use the verify_customer_pin tool. If you need to look up customer details, use the get_customer tool. If you need to list products or search for products, use the list_products and search_products tools. Do not make up information that is not available through the tools. Do don send markdown or code blocks in your response, just plain text.", 
             model=llama_model,
             tools=[list_tool, search_tool, verify_tool, customer_tool]
         )
