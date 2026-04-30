@@ -4,3 +4,8 @@ uvicorn
 openai
 openai-agents
 python-dotenv
+httpx
+google-generativeai
+streamlit
+gunicorn
+uvicorn
