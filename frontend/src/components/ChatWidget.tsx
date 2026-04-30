@@ -30,9 +30,10 @@ const ChatWidget: React.FC = () => {
       const res = await fetch(`${API_BASE_URL}/chat/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText })
+        body: JSON.stringify({ user_id: 'guest', message: userText })
       });
       const data = await res.json();
+      console.log({data})
       setMessages(msgs => [...msgs, { sender: 'bot', text: data.response || 'Sorry, I did not understand that.' }]);
     } catch (err) {
       setMessages(msgs => [...msgs, { sender: 'bot', text: 'Sorry, there was a problem connecting to the server.' }]);
