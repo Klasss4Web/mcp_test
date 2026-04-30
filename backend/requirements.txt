@@ -1,0 +1,6 @@
+# FastAPI project requirements
+fastapi
+uvicorn
+openai
+openai-agents
+python-dotenv
