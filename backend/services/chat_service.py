@@ -1,86 +1,76 @@
 import logging
 import os
-import asyncio
-from google import generativeai as genai
+from openai import AsyncOpenAI
+from dotenv import load_dotenv
+from agents import Agent, Runner, OpenAIChatCompletionsModel, function_tool 
 from .product_service import ProductService
 from .auth_service import AuthService
 from core.errors import AppException
-from openai import AsyncOpenAI
-from dotenv import load_dotenv
-from agents import Agent, Runner, trace, OpenAIChatCompletionsModel
 
 load_dotenv(override=True)
-
-groq_api_key = os.getenv('GROQ_API_KEY')
-print(f"ChatService initialized with GROQ_API_KEY: {'set' if groq_api_key else 'not set'}")
 
 class ChatService:
     def __init__(self):
         self.products = ProductService()
         self.auth = AuthService()
-        self.chat_session = None
+        self.agent = None
+        self.initialized = False
+        self.groq_api_key = os.getenv('GROQ_API_KEY')
 
     async def initialize(self):
-        # REMOVED: list_products_sync and other asyncio.run wrappers
-        # These were causing the 500 error due to nested event loops.
+        if self.initialized: return
 
-        GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-        groq_client = AsyncOpenAI(base_url=GROQ_BASE_URL, api_key=groq_api_key)
+        if not self.groq_api_key:
+            raise AppException("GROQ_API_KEY is missing.")
 
-        llama3_3_model = OpenAIChatCompletionsModel(
+        groq_client = AsyncOpenAI(
+            base_url="https://api.groq.com/openai/v1", 
+            api_key=self.groq_api_key
+        )
+
+        llama_model = OpenAIChatCompletionsModel(
             model="llama-3.3-70b-versatile", 
             openai_client=groq_client
         )
         
-        # Pass the ASYNC methods directly to mcp_servers. 
-        # The 'agents' framework is designed to await these internally.
-        agent = Agent(
-            name="investigator", 
-            instructions="""
-                You are the Meridian Electronics Assistant. 
-                Use search_products to find items. Use verify_customer_pin before
-                discussing sensitive order details. Always be helpful and professional.
-            """, 
-            model=llama3_3_model,
-            mcp_servers=[
-                self.products.list_products,
-                self.products.search_products,
-                self.auth.get_customer,
-                self.auth.verify_customer_pin
-            ]
-        )
+        # Create tools
+        list_tool = function_tool(self.products.list_products)
+        search_tool = function_tool(self.products.search_products)
+        verify_tool = function_tool(self.auth.verify_customer_pin)
+        customer_tool = function_tool(self.auth.get_customer)
 
-        try:
-            with trace("investigate"):
-                # Runs your specific Banoffee task
-                result = await Runner.run(agent, "Find a great recipe for Banoffee Pie, then summarize it in markdown to banoffee.md")
-                print(result.final_output)
-        except Exception as e:
-            logging.error(f"Startup Investigation failed: {e}")
-            # We don't necessarily want to crash the whole service if the recipe search fails
+        for tool in [list_tool, search_tool, verify_tool, customer_tool]:
+            if hasattr(tool, 'definition') and isinstance(tool.definition, dict):
+                fn = tool.definition.get("function", {})
+                params = fn.get("parameters", {})
+                
+                # Ensure the root parameters type is 'object'
+                if "type" not in params:
+                    params["type"] = "object"
+                
+                # Ensure 'properties' exists as a dictionary
+                if "properties" not in params or not params["properties"]:
+                    params["properties"] = {}
+                    
+                # Groq strictly requires 'properties' if 'type' is 'object'
+                fn["parameters"] = params
 
-        # Initialize the persistent chat session
-        self.genai_model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
-            tools=[
-                self.products.list_products, 
-                self.products.search_products, 
-                self.auth.get_customer, 
-                self.auth.verify_customer_pin
-            ],
-            system_instruction="You are the Meridian Electronics Assistant."
+        self.agent = Agent(
+            name="MeridianAssistant", 
+            instructions="You are a helpful electronics store assistant.", 
+            model=llama_model,
+            tools=[list_tool, search_tool, verify_tool, customer_tool]
         )
-        self.chat_session = self.genai_model.start_chat(enable_automatic_function_calling=True)
+        self.initialized = True
 
     async def chat(self, user_id: str, message: str):
         try:
-            if not self.chat_session:
-                await self.initialize()
-            
-            response = await self.chat_session.send_message_async(message)
-            return {"response": response.text}
-            
+            if not self.initialized: await self.initialize()
+            result = await Runner.run(self.agent, message)
+            return {"response": result.final_output}
         except Exception as e:
-            logging.error(f"Agent Logic Error: {str(e)}")
-            # This is where your 500 comes from if anything above fails
-            raise AppException(f"Agent Logic Error: {str(e)}")
+            logging.error(f"Chat Logic Error: {str(e)}")
+            # Catching the specific Groq schema error message
+            if "failed to validate" in str(e).lower() or "400" in str(e):
+                return {"response": "I'm having trouble connecting to my tools. Please try again in a moment."}
+            raise AppException(f"Assistant Error: {str(e)}")
