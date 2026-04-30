@@ -1,8 +1,8 @@
 import os
 import json
 from google import generativeai as genai
-from services.products import ProductService
-from services.auth import AuthService
+from services.product_service import ProductService
+from services.auth_service import AuthService
 
 class MeridianChatbot:
     def __init__(self):

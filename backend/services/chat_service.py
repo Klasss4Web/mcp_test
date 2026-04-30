@@ -15,21 +15,21 @@ class ChatService:
         self.auth = AuthService()
         self.agent = None
         self.initialized = False
-        self.groq_api_key = os.getenv('GROQ_API_KEY')
+        self.groq_api_key = os.getenv('OPENROUTER_API_KEY')
 
     async def initialize(self):
         if self.initialized: return
 
         if not self.groq_api_key:
-            raise AppException("GROQ_API_KEY is missing.")
+            raise AppException("OPENROUTER_API_KEY is missing.")
 
         groq_client = AsyncOpenAI(
-            base_url="https://api.groq.com/openai/v1", 
+            base_url="https://openrouter.ai/api/v1", 
             api_key=self.groq_api_key
         )
 
         llama_model = OpenAIChatCompletionsModel(
-            model="llama-3.3-70b-versatile", 
+            model="openai/gpt-4o", 
             openai_client=groq_client
         )
         
